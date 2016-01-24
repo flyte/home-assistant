@@ -1,3 +1,11 @@
+"""
+homeassistant.components.zigbee
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Sets up and provides access to a ZigBee device and contains generic entity
+classes.
+"""
+
 import logging
 from time import sleep
 from datetime import timedelta, datetime
@@ -40,12 +48,29 @@ IO_PIN_COMMANDS = (
 
 
 class GPIOSetting:
+    """
+    Class to contain a human readable name and byte value of a GPIO setting.
+    """
     def __init__(self, name, value):
-        self.name = name
-        self.value = value
+        self._name = name
+        self._value = value
 
     def __str__(self):
         return self.name
+
+    @property
+    def name(self):
+        """
+        Human readable name for the GPIO setting.
+        """
+        return self._name
+
+    @property
+    def value(self):
+        """
+        Byte value of the GPIO setting.
+        """
+        return self._value
 
 
 GPIO_DISABLED = GPIOSetting("DISABLED", b"\x00")
@@ -63,16 +88,15 @@ GPIO_SETTINGS = {
     GPIO_DIGITAL_OUTPUT_HIGH.value: GPIO_DIGITAL_OUTPUT_HIGH
 }
 
-log = logging.getLogger(__name__)
-log.addHandler(logging.StreamHandler())
-log.setLevel(logging.DEBUG)
+_LOGGER = logging.getLogger(__name__)
+_LOGGER.addHandler(logging.StreamHandler())
+_LOGGER.setLevel(logging.DEBUG)
 
 # Service to set states on ZigBee modules
 # Service to request state from ZigBee modules
 # Event for incoming state notifications
 
-ser = None
-device = None
+DEVICE = None
 
 
 class ZigBeeException(Exception):
@@ -83,45 +107,68 @@ class ZigBeeException(Exception):
 
 
 class ZigBeeResponseTimeout(ZigBeeException):
+    """
+    The ZigBee device didn't return a frame within the configured timeout.
+    """
     pass
 
 
 class ZigBeeUnknownError(ZigBeeException):
+    """
+    The ZigBee device returned an 0x01 status byte.
+    """
     pass
 
 
 class ZigBeeInvalidCommand(ZigBeeException):
+    """
+    The requested ZigBee command was not valid.
+    """
     pass
 
 
 class ZigBeeInvalidParameter(ZigBeeException):
+    """
+    The requested ZigBee parameter was not valid.
+    """
     pass
 
 
 class ZigBeeTxFailure(ZigBeeException):
+    """
+    The ZigBee device attempted to send the frame but it could not communicate
+    with the target device (usually out of range or switched off).
+    """
     pass
 
 
 class ZigBeeUnknownStatus(ZigBeeException):
+    """
+    The ZigBee device returned a status code which we're not familiar with.
+    """
     pass
 
 
 class ZigBeePinNotConfigured(ZigBeeException):
+    """
+    An operation was attempted on a GPIO pin which it was not configured for.
+    """
     pass
 
 
 def setup(hass, config):
-    global device
-    global ser
-    global ZigBee
+    """
+    Set up the connection to the ZigBee device and instantiate the helper
+    class for it.
+    """
+    global DEVICE
 
     from serial import Serial
-    from xbee import ZigBee
 
     usb_device = config[DOMAIN].get(CONF_DEVICE, DEFAULT_DEVICE)
     baud = int(config[DOMAIN].get(CONF_BAUD, DEFAULT_BAUD))
     ser = Serial(usb_device, baud)
-    device = ZigBeeHelper(ser)
+    DEVICE = ZigBeeHelper(ser)
     return True
 
 
@@ -153,8 +200,8 @@ def hex_to_int(value):
 
 def create_boolean_maps(config):
     """
-    Create dicts to map booleans to pin high/low and vice versa. Depends on the config
-    item "on_state" which should be set to "low" or "high".
+    Create dicts to map booleans to pin high/low and vice versa. Depends on the
+    config item "on_state" which should be set to "low" or "high".
     """
     if config.get("on_state", "").lower() == "low":
         bool2state = {
@@ -187,7 +234,8 @@ class ZigBeeHelper(object):
         Gets a byte of the next valid frame ID (1 - 255), increments the
         internal _frame_id counter and wraps it back to 1 if necessary.
         """
-        # Python 2/3 compatible way of converting 1 to "\x01" in py2 or b"\x01" in py3.
+        # Python 2/3 compatible way of converting 1 to "\x01" in py2 or b"\x01"
+        # in py3.
         fid = bytes(bytearray((self._frame_id,)))
         self._frame_id += 1
         if self._frame_id > 0xFF:
@@ -207,7 +255,7 @@ class ZigBeeHelper(object):
         except KeyError:
             # Has no frame_id, ignore?
             pass
-        log.debug("Frame received: %s" % frame)
+        _LOGGER.debug("Frame received: %s", frame)
 
     def _send(self, **kwargs):
         """
@@ -235,40 +283,46 @@ class ZigBeeHelper(object):
             except KeyError:
                 sleep(0.1)
                 continue
-        log.exception("Did not receive response within configured timeout period.")
+        _LOGGER.exception(
+            "Did not receive response within configured timeout period.")
         raise ZigBeeResponseTimeout()
 
     def _get_parameter(self, parameter, dest_addr_long=None):
         """
         Fetches and returns the value of the specified parameter.
         """
-        frame = self._send_and_wait(command=parameter, dest_addr_long=dest_addr_long)
+        frame = self._send_and_wait(
+            command=parameter, dest_addr_long=dest_addr_long)
         return frame["parameter"]
 
     def get_sample(self, dest_addr_long=None):
         """
         Initiate a sample and return its data.
         """
-        frame = self._send_and_wait(command=b"IS", dest_addr_long=dest_addr_long)
+        frame = self._send_and_wait(
+            command=b"IS", dest_addr_long=dest_addr_long)
         if "parameter" in frame:
-            return frame["parameter"][0]  # @TODO: Is there always one value? Is it always a list?
+            # @TODO: Is there always one value? Is it always a list?
+            return frame["parameter"][0]
         return {}
 
     def read_digital_pin(self, pin_number, dest_addr_long=None):
         """
-        Fetches a sample and returns the boolean value of the requested digital pin.
+        Fetches a sample and returns the boolean value of the requested digital
+        pin.
         """
         sample = self.get_sample(dest_addr_long=dest_addr_long)
         try:
             return sample[DIGITAL_PINS[pin_number]]
         except KeyError:
             raise ZigBeePinNotConfigured(
-                "Pin %s (%s) is not configured as a digital input or output." % (
-                    pin_number, IO_PIN_COMMANDS[pin_number]))
+                "Pin %s (%s) is not configured as a digital input or output."
+                % (pin_number, IO_PIN_COMMANDS[pin_number]))
 
     def read_analog_pin(self, pin_number, dest_addr_long=None):
         """
-        Fetches a sample and returns the integer value of the requested analog pin.
+        Fetches a sample and returns the integer value of the requested analog
+        pin.
         """
         sample = self.get_sample(dest_addr_long=dest_addr_long)
         try:
@@ -312,12 +366,20 @@ class ZigBeeHelper(object):
 
     def get_temperature(self, dest_addr_long=None):
         """
-        Fetches and returns the degrees Celcius value measured by the XBee Pro module.
+        Fetches and returns the degrees Celcius value measured by the XBee Pro
+        module.
         """
-        return hex_to_int(self._get_parameter(b"TP", dest_addr_long=dest_addr_long))
+        return hex_to_int(self._get_parameter(
+            b"TP", dest_addr_long=dest_addr_long))
 
 
 class ZigBeeDigitalIn(ToggleEntity):
+    """
+    ToggleEntity to represent a GPIO pin configured as a digital input.
+    """
+    # Not sure how I can reduce the number of arguments without arbitrarily
+    # grouping unrelated ones.
+    # pylint: disable=too-many-arguments
     def __init__(self, name, address, pin, boolean_maps, poll):
         self._name = name
         self._address = address
@@ -345,7 +407,7 @@ class ZigBeeDigitalIn(ToggleEntity):
         """
         Ask the ZigBee device what its output is set to.
         """
-        pin_state = device.get_gpio_pin(
+        pin_state = DEVICE.get_gpio_pin(
             self._pin,
             self._address)
         self._state = self._state2bool[pin_state]
@@ -356,7 +418,7 @@ class ZigBeeDigitalOut(ZigBeeDigitalIn):
     Adds functionality to ZigBeeDigitalIn to control an output.
     """
     def _set_state(self, state):
-        device.set_gpio_pin(
+        DEVICE.set_gpio_pin(
             self._pin,
             self._bool2state[state],
             self._address)
@@ -371,5 +433,7 @@ class ZigBeeDigitalOut(ZigBeeDigitalIn):
 
 
 class ZigBeeAnalogIn(Entity):
-    # @TODO: Implement this.
+    """
+    @TODO: Implement this.
+    """
     pass

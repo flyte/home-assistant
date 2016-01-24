@@ -1,6 +1,13 @@
+"""
+homeassistant.components.light.zigbee
+
+Contains functionality to use a ZigBee device as a light.
+"""
+
 from binascii import unhexlify
 
-from homeassistant.components.zigbee import ZigBeeDigitalOut, create_boolean_maps
+from homeassistant.components.zigbee import (
+    ZigBeeDigitalOut, create_boolean_maps)
 
 
 DEPENDENCIES = ["zigbee"]
