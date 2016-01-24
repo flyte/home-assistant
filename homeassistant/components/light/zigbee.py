@@ -33,7 +33,10 @@ class ZigBeeLight(Light):
         self._address = address
         self._pin = pin
         self._output_settings = output_settings
+        # A reversed output_settings so we can look up our True/False state from pin high/low.
+        self._output_settings_state = {v: k for k, v in output_settings.items()}
         self._state = False
+        self.update()
 
     @property
     def name(self):
@@ -60,3 +63,12 @@ class ZigBeeLight(Light):
 
     def turn_off(self, **kwargs):
         self._set_state(False)
+
+    def update(self):
+        """
+        Ask the ZigBee device what its outputs are set to.
+        """
+        pin_state = zigbee.device.get_gpio_pin(
+            self._pin,
+            self._address)
+        self._state = self._output_settings_state[pin_state]
