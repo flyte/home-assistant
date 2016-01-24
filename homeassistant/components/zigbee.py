@@ -27,6 +27,7 @@ CONF_BAUD = "baud"
 
 DEFAULT_DEVICE = "/dev/ttyUSB0"
 DEFAULT_BAUD = 9600
+DEFAULT_ADC_MAX_VOLTS = 1.2
 
 RX_TIMEOUT = timedelta(seconds=10)
 
@@ -45,6 +46,7 @@ IO_PIN_COMMANDS = (
     b"D3", b"D4", b"D5",
     b"P0", b"P1", b"P2"
 )
+ADC_MAX_VAL = 1023
 
 
 class GPIOSetting:
@@ -434,6 +436,51 @@ class ZigBeeDigitalOut(ZigBeeDigitalIn):
 
 class ZigBeeAnalogIn(Entity):
     """
-    @TODO: Implement this.
+    Entity to represent a GPIO pin configured as an analog input.
     """
-    pass
+    def __init__(self, name, address, pin, poll, max_voltage):
+        self._name = name
+        self._address = address
+        self._pin = pin
+        self._value = None
+        self._should_poll = bool(poll)
+        self._max_voltage = float(max_voltage)
+        self.update()
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def should_poll(self):
+        return self._should_poll
+
+    @property
+    def state(self):
+        return int(self._value_percentage)
+
+    @property
+    def unit_of_measurement(self):
+        return "%"
+
+    @property
+    def _value_millivolts(self):
+        return self._value_volts * 1000
+
+    @property
+    def _value_volts(self):
+        return ((self._max_voltage / ADC_MAX_VAL) * self._value) * 1000
+
+    @property
+    def _value_percentage(self):
+        def clamp(n, minn, maxn):
+            return max(min(maxn, n), minn)
+
+        return clamp((100.0 / ADC_MAX_VAL) * self._value, 0, 100)
+
+    def update(self):
+        """
+        Convert the value of zero to ADC_MAX_VAL (1023) into a voltage using
+        _max_voltage.
+        """
+        self._value = DEVICE.read_analog_pin(self._pin, self._address)

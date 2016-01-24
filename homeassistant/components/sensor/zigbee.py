@@ -27,9 +27,11 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
 
     elif typ in ("analog", "analogue"):
         sensor_class = zigbee.ZigBeeAnalogIn
+        max_volts = config.get("max_volts", zigbee.DEFAULT_ADC_MAX_VOLTS)
         extra_kwargs.update(dict(
             pin=config["pin"],
-            poll=True
+            poll=True,
+            max_voltage=max_volts
         ))
 
     elif typ == "digital":
@@ -40,7 +42,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
             poll=True
         ))
     else:
-        # @TODO: How do we fail here?
+        # @TODO: How should we fail here?
         pass
 
     add_entities([sensor_class(
