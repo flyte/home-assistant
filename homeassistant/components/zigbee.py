@@ -3,6 +3,8 @@ from time import sleep
 from datetime import timedelta, datetime
 from sys import version_info
 
+from homeassistant.helpers.entity import ToggleEntity
+
 try:
     from xbee import ZigBee
 except ImportError:
@@ -149,6 +151,21 @@ def hex_to_int(value):
     return int(value.encode("hex"), 16)
 
 
+def create_output_settings(config):
+    """
+    Create a dict to allow a Boolean value to represent output pin high/low
+    """
+    if config.get("on_state", "").lower() == "low":
+        return {
+            True: GPIO_DIGITAL_OUTPUT_LOW,
+            False: GPIO_DIGITAL_OUTPUT_HIGH
+        }
+    return {
+        True: GPIO_DIGITAL_OUTPUT_HIGH,
+        False: GPIO_DIGITAL_OUTPUT_LOW
+    }
+
+
 class ZigBeeHelper(object):
     """
     Adds convenience methods for a ZigBee.
@@ -288,3 +305,53 @@ class ZigBeeHelper(object):
         Fetches and returns the value of NI.
         """
         return self._get_parameter(b"NI", dest_addr_long=dest_addr_long)
+
+
+class ZigBeeDigitalOut(ToggleEntity):
+    def __init__(self, name, address, pin, output_settings, poll):
+        self._name = name
+        self._address = address
+        self._pin = pin
+        self._output_settings = output_settings
+        # A reversed output_settings so we can look up our True/False state from pin high/low.
+        self._output_settings_state = {v: k for k, v in output_settings.items()}
+        self._should_poll = bool(poll)
+        self._state = False
+
+        # Poll for initial value
+        self.update()
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def should_poll(self):
+        return self._should_poll
+
+    @property
+    def is_on(self):
+        return self._state
+
+    def _set_state(self, state):
+        device.set_gpio_pin(
+            self._pin,
+            self._output_settings[state],
+            self._address)
+        self._state = state
+        self.update_ha_state()
+
+    def turn_on(self, **kwargs):
+        self._set_state(True)
+
+    def turn_off(self, **kwargs):
+        self._set_state(False)
+
+    def update(self):
+        """
+        Ask the ZigBee device what its outputs are set to.
+        """
+        pin_state = device.get_gpio_pin(
+            self._pin,
+            self._address)
+        self._state = self._output_settings_state[pin_state]
