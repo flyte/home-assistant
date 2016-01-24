@@ -310,6 +310,12 @@ class ZigBeeHelper(object):
         """
         return self._get_parameter(b"NI", dest_addr_long=dest_addr_long)
 
+    def get_temperature(self, dest_addr_long=None):
+        """
+        Fetches and returns the degrees Celcius value measured by the XBee Pro module.
+        """
+        return hex_to_int(self._get_parameter(b"TP", dest_addr_long=dest_addr_long))
+
 
 class ZigBeeDigitalIn(ToggleEntity):
     def __init__(self, name, address, pin, boolean_maps, poll):
