@@ -4,6 +4,9 @@ from homeassistant.components import zigbee
 from homeassistant.components.light import Light
 
 
+DEPENDENCIES = ["zigbee"]
+
+
 def setup_platform(hass, config, add_entities, discovery_info=None):
     # @TODO: For each item, do the below:
     if config["on_state"].lower() == "low":

@@ -120,6 +120,7 @@ def setup(hass, config):
     baud = int(config[DOMAIN].get(CONF_BAUD, DEFAULT_BAUD))
     ser = Serial(usb_device, baud)
     device = ZigBeeHelper(ser)
+    return True
 
 
 def raise_if_error(frame):
