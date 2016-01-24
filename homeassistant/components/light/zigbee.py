@@ -1,6 +1,6 @@
 from binascii import unhexlify
 
-from homeassistant.components.zigbee import ZigBeeDigitalOut, create_output_settings
+from homeassistant.components.zigbee import ZigBeeDigitalOut, create_boolean_maps
 
 
 DEPENDENCIES = ["zigbee"]
@@ -14,6 +14,6 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
         config["name"],
         unhexlify(config["address"]),
         config["pin"],
-        create_output_settings(config),
+        create_boolean_maps(config),
         config.get("poll")
     )])

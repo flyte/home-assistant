@@ -3,7 +3,7 @@ from time import sleep
 from datetime import timedelta, datetime
 from sys import version_info
 
-from homeassistant.helpers.entity import ToggleEntity
+from homeassistant.helpers.entity import Entity, ToggleEntity
 
 try:
     from xbee import ZigBee
@@ -151,19 +151,23 @@ def hex_to_int(value):
     return int(value.encode("hex"), 16)
 
 
-def create_output_settings(config):
+def create_boolean_maps(config):
     """
-    Create a dict to allow a Boolean value to represent output pin high/low
+    Create dicts to map booleans to pin high/low and vice versa. Depends on the config
+    item "on_state" which should be set to "low" or "high".
     """
     if config.get("on_state", "").lower() == "low":
-        return {
+        bool2state = {
             True: GPIO_DIGITAL_OUTPUT_LOW,
             False: GPIO_DIGITAL_OUTPUT_HIGH
         }
-    return {
-        True: GPIO_DIGITAL_OUTPUT_HIGH,
-        False: GPIO_DIGITAL_OUTPUT_LOW
-    }
+    else:
+        bool2state = {
+            True: GPIO_DIGITAL_OUTPUT_HIGH,
+            False: GPIO_DIGITAL_OUTPUT_LOW
+        }
+    state2bool = {v: k for k, v in bool2state.items()}
+    return bool2state, state2bool
 
 
 class ZigBeeHelper(object):
@@ -307,14 +311,12 @@ class ZigBeeHelper(object):
         return self._get_parameter(b"NI", dest_addr_long=dest_addr_long)
 
 
-class ZigBeeDigitalOut(ToggleEntity):
-    def __init__(self, name, address, pin, output_settings, poll):
+class ZigBeeDigitalIn(ToggleEntity):
+    def __init__(self, name, address, pin, boolean_maps, poll):
         self._name = name
         self._address = address
         self._pin = pin
-        self._output_settings = output_settings
-        # A reversed output_settings so we can look up our True/False state from pin high/low.
-        self._output_settings_state = {v: k for k, v in output_settings.items()}
+        self._bool2state, self._state2bool = boolean_maps
         self._should_poll = bool(poll)
         self._state = False
 
@@ -333,10 +335,24 @@ class ZigBeeDigitalOut(ToggleEntity):
     def is_on(self):
         return self._state
 
+    def update(self):
+        """
+        Ask the ZigBee device what its output is set to.
+        """
+        pin_state = device.get_gpio_pin(
+            self._pin,
+            self._address)
+        self._state = self._state2bool[pin_state]
+
+
+class ZigBeeDigitalOut(ZigBeeDigitalIn):
+    """
+    Adds functionality to ZigBeeDigitalIn to control an output.
+    """
     def _set_state(self, state):
         device.set_gpio_pin(
             self._pin,
-            self._output_settings[state],
+            self._bool2state[state],
             self._address)
         self._state = state
         self.update_ha_state()
@@ -347,11 +363,7 @@ class ZigBeeDigitalOut(ToggleEntity):
     def turn_off(self, **kwargs):
         self._set_state(False)
 
-    def update(self):
-        """
-        Ask the ZigBee device what its outputs are set to.
-        """
-        pin_state = device.get_gpio_pin(
-            self._pin,
-            self._address)
-        self._state = self._output_settings_state[pin_state]
+
+class ZigBeeAnalogIn(Entity):
+    # @TODO: Implement this.
+    pass
