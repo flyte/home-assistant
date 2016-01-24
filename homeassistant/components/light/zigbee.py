@@ -23,19 +23,23 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
         config["name"],
         unhexlify(config["address"]),
         config["pin"],
-        output_settings
+        output_settings,
+        config.get("poll")
     )])
 
 
 class ZigBeeLight(Light):
-    def __init__(self, name, address, pin, output_settings):
+    def __init__(self, name, address, pin, output_settings, poll):
         self._name = name
         self._address = address
         self._pin = pin
         self._output_settings = output_settings
         # A reversed output_settings so we can look up our True/False state from pin high/low.
         self._output_settings_state = {v: k for k, v in output_settings.items()}
+        self._should_poll = bool(poll)
         self._state = False
+
+        # Poll for initial value
         self.update()
 
     @property
@@ -44,7 +48,7 @@ class ZigBeeLight(Light):
 
     @property
     def should_poll(self):
-        return False
+        return self._should_poll
 
     @property
     def is_on(self):
