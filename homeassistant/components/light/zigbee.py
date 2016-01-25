@@ -17,9 +17,12 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     """
     Create and add an entity based on the configuration.
     """
+    address = config.get("address")
+    if address is not None:
+        address = unhexlify(address)
     add_entities([ZigBeeDigitalOut(
         config["name"],
-        unhexlify(config["address"]),
+        address,
         config["pin"],
         create_boolean_maps(config),
         config.get("poll")

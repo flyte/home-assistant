@@ -438,6 +438,9 @@ class ZigBeeAnalogIn(Entity):
     """
     Entity to represent a GPIO pin configured as an analog input.
     """
+    # Not sure how I can reduce the number of arguments without arbitrarily
+    # grouping unrelated ones.
+    # pylint: disable=too-many-arguments
     def __init__(self, name, address, pin, poll, max_voltage):
         self._name = name
         self._address = address
@@ -480,7 +483,6 @@ class ZigBeeAnalogIn(Entity):
 
     def update(self):
         """
-        Convert the value of zero to ADC_MAX_VAL (1023) into a voltage using
-        _max_voltage.
+        Get the latest reading from the ADC.
         """
         self._value = DEVICE.read_analog_pin(self._pin, self._address)
