@@ -12,13 +12,13 @@ from datetime import timedelta, datetime
 from sys import version_info
 from binascii import unhexlify
 
-from homeassistant.const import EVENT_HOMEASSISTANT_STOP
-from homeassistant.helpers.entity import Entity, ToggleEntity
-
 try:
     from xbee import ZigBee as ZigBeeDevice
 except ImportError:
     ZigBeeDevice = None
+
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP
+from homeassistant.helpers.entity import Entity, ToggleEntity
 
 
 DOMAIN = "zigbee"
@@ -181,7 +181,7 @@ def close_serial_port():
     """
     Close the serial port we're using to communicate with the ZigBee.
     """
-    DEVICE.serial.close()
+    DEVICE.zb.serial.close()
 
 
 def raise_if_error(frame):
@@ -219,7 +219,9 @@ class ZigBee(object):
 
     def __init__(self, ser):
         self._ser = ser
-        self._zb = ZigBeeDevice(ser, callback=self._frame_received)
+        # I think it's obvious that zb refers to a ZigBee.
+        # pylint: disable=invalid-name
+        self.zb = ZigBeeDevice(ser, callback=self._frame_received)
 
     @property
     def next_frame_id(self):
@@ -255,9 +257,9 @@ class ZigBee(object):
         Send a frame to either the local ZigBee or a remote device.
         """
         if kwargs.get("dest_addr_long") is not None:
-            self._zb.remote_at(**kwargs)
+            self.zb.remote_at(**kwargs)
         else:
-            self._zb.at(**kwargs)
+            self.zb.at(**kwargs)
 
     def _send_and_wait(self, **kwargs):
         """
@@ -377,6 +379,9 @@ class ZigBeeConfig(object):
 
     @property
     def name(self):
+        """
+        The name given to the entity.
+        """
         return self._config["name"]
 
     @property
@@ -392,6 +397,10 @@ class ZigBeeConfig(object):
 
     @property
     def should_poll(self):
+        """
+        A bool depicting whether HA should repeatedly poll this device for its
+        value.
+        """
         return self._should_poll
 
 
@@ -402,6 +411,9 @@ class ZigBeePinConfig(ZigBeeConfig):
     """
     @property
     def pin(self):
+        """
+        The GPIO pin number.
+        """
         return self._config["pin"]
 
 
@@ -563,12 +575,15 @@ class ZigBeeAnalogIn(Entity):
 
     @property
     def _value_volts(self):
-        return ((self._max_voltage / ADC_MAX_VAL) * self._value) * 1000
+        return ((self._config.max_voltage / ADC_MAX_VAL) * self._value) * 1000
 
     @property
     def _value_percentage(self):
-        def clamp(n, minn, maxn):
-            return max(min(maxn, n), minn)
+        def clamp(num, minn, maxn):
+            """
+            Clamp num between minn and maxn.
+            """
+            return max(min(maxn, num), minn)
 
         return clamp((100.0 / ADC_MAX_VAL) * self._value, 0, 100)
 

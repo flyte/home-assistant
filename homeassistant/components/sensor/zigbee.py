@@ -44,9 +44,9 @@ class ZigBeeTemperatureSensor(Entity):
         #        the value instead.
         try:
             self.update()
-        except zigbee.ZigBeeZigBeeTxFailure as e:
+        except zigbee.ZigBeeTxFailure as exc:
             _LOGGER.warning(
-                "Unable to get initial value of %s: %s", config.name, e)
+                "Unable to get initial value of %s: %s", config.name, exc)
 
     @property
     def name(self):
