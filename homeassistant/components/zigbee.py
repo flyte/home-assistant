@@ -203,7 +203,7 @@ def raise_if_error(frame):
 
 def hex_to_int(value):
     """
-    Convert hex string like 0xAE3 to 2787.
+    Convert hex string like "AE3" to 2787.
     """
     if version_info.major >= 3:
         return int.from_bytes(value, "big")

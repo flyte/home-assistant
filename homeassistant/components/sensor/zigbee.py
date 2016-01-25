@@ -17,8 +17,8 @@ _LOGGER = logging.getLogger(__name__)
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
     """
-    Parses the config to work out which type of ZigBee sensor we're dealing
-    with and instantiates relevant classes to handle it.
+    Uses the 'type' config value to work out which type of ZigBee sensor we're
+    dealing with and instantiates the relevant classes to handle it.
     """
     typ = config.get("type", "").lower()
     if not typ:
