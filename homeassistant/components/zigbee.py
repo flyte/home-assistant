@@ -10,13 +10,15 @@ import logging
 from time import sleep
 from datetime import timedelta, datetime
 from sys import version_info
+from binascii import unhexlify
 
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.helpers.entity import Entity, ToggleEntity
 
 try:
-    from xbee import ZigBee
+    from xbee import ZigBee as ZigBeeDevice
 except ImportError:
-    ZigBee = None
+    ZigBeeDevice = None
 
 
 DOMAIN = "zigbee"
@@ -170,8 +172,16 @@ def setup(hass, config):
     usb_device = config[DOMAIN].get(CONF_DEVICE, DEFAULT_DEVICE)
     baud = int(config[DOMAIN].get(CONF_BAUD, DEFAULT_BAUD))
     ser = Serial(usb_device, baud)
-    DEVICE = ZigBeeHelper(ser)
+    DEVICE = ZigBee(ser)
+    hass.bus.listen_once(EVENT_HOMEASSISTANT_STOP, close_serial_port)
     return True
+
+
+def close_serial_port():
+    """
+    Close the serial port we're using to communicate with the ZigBee.
+    """
+    DEVICE.serial.close()
 
 
 def raise_if_error(frame):
@@ -200,26 +210,7 @@ def hex_to_int(value):
     return int(value.encode("hex"), 16)
 
 
-def create_boolean_maps(config):
-    """
-    Create dicts to map booleans to pin high/low and vice versa. Depends on the
-    config item "on_state" which should be set to "low" or "high".
-    """
-    if config.get("on_state", "").lower() == "low":
-        bool2state = {
-            True: GPIO_DIGITAL_OUTPUT_LOW,
-            False: GPIO_DIGITAL_OUTPUT_HIGH
-        }
-    else:
-        bool2state = {
-            True: GPIO_DIGITAL_OUTPUT_HIGH,
-            False: GPIO_DIGITAL_OUTPUT_LOW
-        }
-    state2bool = {v: k for k, v in bool2state.items()}
-    return bool2state, state2bool
-
-
-class ZigBeeHelper(object):
+class ZigBee(object):
     """
     Adds convenience methods for a ZigBee.
     """
@@ -228,7 +219,7 @@ class ZigBeeHelper(object):
 
     def __init__(self, ser):
         self._ser = ser
-        self._zb = ZigBee(ser, callback=self._frame_received)
+        self._zb = ZigBeeDevice(ser, callback=self._frame_received)
 
     @property
     def next_frame_id(self):
@@ -375,31 +366,133 @@ class ZigBeeHelper(object):
             b"TP", dest_addr_long=dest_addr_long))
 
 
-class ZigBeeDigitalIn(ToggleEntity):
+class ZigBeeConfig(object):
     """
-    ToggleEntity to represent a GPIO pin configured as a digital input.
+    Handles the fetching of configuration from the config file for any ZigBee
+    entity.
     """
-    # Not sure how I can reduce the number of arguments without arbitrarily
-    # grouping unrelated ones.
-    # pylint: disable=too-many-arguments
-    def __init__(self, name, address, pin, boolean_maps, poll):
-        self._name = name
-        self._address = address
-        self._pin = pin
-        self._bool2state, self._state2bool = boolean_maps
-        self._should_poll = bool(poll)
-        self._state = False
-
-        # Poll for initial value
-        self.update()
+    def __init__(self, config):
+        self._config = config
+        self._should_poll = config.get("poll", True)
 
     @property
     def name(self):
-        return self._name
+        return self._config["name"]
+
+    @property
+    def address(self):
+        """
+        If an address has been provided, unhexlify it, otherwise return None
+        as we're talking to our local ZigBee device.
+        """
+        address = self._config.get("address")
+        if address is not None:
+            address = unhexlify(address)
+        return address
 
     @property
     def should_poll(self):
         return self._should_poll
+
+
+class ZigBeePinConfig(ZigBeeConfig):
+    """
+    Handles the fetching of configuration from the config file for a ZigBee
+    GPIO pin.
+    """
+    @property
+    def pin(self):
+        return self._config["pin"]
+
+
+class ZigBeeDigitalPinConfig(ZigBeePinConfig):
+    """
+    Handles the fetching of configuration from the config file for a ZigBee
+    GPIO pin set to digital in or out.
+    """
+    def __init__(self, config):
+        super(ZigBeeDigitalPinConfig, self).__init__(config)
+        self._bool2state, self._state2bool = self.boolean_maps
+
+    @property
+    def boolean_maps(self):
+        """
+        Create dicts to map booleans to pin high/low and vice versa. Depends on
+        the config item "on_state" which should be set to "low" or "high".
+        """
+        if self._config.get("on_state", "").lower() == "low":
+            bool2state = {
+                True: GPIO_DIGITAL_OUTPUT_LOW,
+                False: GPIO_DIGITAL_OUTPUT_HIGH
+            }
+        else:
+            bool2state = {
+                True: GPIO_DIGITAL_OUTPUT_HIGH,
+                False: GPIO_DIGITAL_OUTPUT_LOW
+            }
+        state2bool = {v: k for k, v in bool2state.items()}
+        return bool2state, state2bool
+
+    @property
+    def bool2state(self):
+        """
+        A dictionary mapping booleans to GPIOSetting objects to translate
+        on/off as being pin high or low.
+        """
+        return self._bool2state
+
+    @property
+    def state2bool(self):
+        """
+        A dictionary mapping GPIOSetting objects to booleans to translate
+        pin high/low as being on or off.
+        """
+        return self._state2bool
+
+
+class ZigBeeDigitalOutConfig(ZigBeeDigitalPinConfig):
+    """
+    A subclass of ZigBeeDigitalPinConfig which sets _should_poll to default as
+    False instead of True. The value will still be overridden by the presence
+    of a 'poll' config entry.
+    """
+    def __init__(self, config):
+        super(ZigBeeDigitalOutConfig, self).__init__(config)
+        self._should_poll = config.get("poll", False)
+
+
+class ZigBeeAnalogInConfig(ZigBeePinConfig):
+    """
+    Handles the fetching of configuration from the config file for a ZigBee
+    GPIO pin set to analog in.
+    """
+    @property
+    def max_voltage(self):
+        """
+        The voltage at which the ADC will report its highest value.
+        """
+        return float(self._config.get("max_volts", DEFAULT_ADC_MAX_VOLTS))
+
+
+class ZigBeeDigitalIn(ToggleEntity):
+    """
+    ToggleEntity to represent a GPIO pin configured as a digital input.
+    """
+    def __init__(self, config):
+        self._config = config
+        self._state = False
+
+        # Poll for initial value
+        # @TODO: Make this asynchronous by calling a HA service to do it.
+        self.update()
+
+    @property
+    def name(self):
+        return self._config.name
+
+    @property
+    def should_poll(self):
+        return self._config.should_poll
 
     @property
     def is_on(self):
@@ -410,9 +503,9 @@ class ZigBeeDigitalIn(ToggleEntity):
         Ask the ZigBee device what its output is set to.
         """
         pin_state = DEVICE.get_gpio_pin(
-            self._pin,
-            self._address)
-        self._state = self._state2bool[pin_state]
+            self._config.pin,
+            self._config.address)
+        self._state = self._config.state2bool[pin_state]
 
 
 class ZigBeeDigitalOut(ZigBeeDigitalIn):
@@ -421,9 +514,9 @@ class ZigBeeDigitalOut(ZigBeeDigitalIn):
     """
     def _set_state(self, state):
         DEVICE.set_gpio_pin(
-            self._pin,
-            self._bool2state[state],
-            self._address)
+            self._config.pin,
+            self._config.bool2state[state],
+            self._config.address)
         self._state = state
         self.update_ha_state()
 
@@ -438,32 +531,30 @@ class ZigBeeAnalogIn(Entity):
     """
     Entity to represent a GPIO pin configured as an analog input.
     """
-    # Not sure how I can reduce the number of arguments without arbitrarily
-    # grouping unrelated ones.
-    # pylint: disable=too-many-arguments
-    def __init__(self, name, address, pin, poll, max_voltage):
-        self._name = name
-        self._address = address
-        self._pin = pin
-        self._value = None
-        self._should_poll = bool(poll)
-        self._max_voltage = float(max_voltage)
+    def __init__(self, config):
+        self._config = config
+
+        # @TODO: Make this asynchronous by calling a HA service to do it.
         self.update()
 
     @property
     def name(self):
-        return self._name
+        return self._config.name
 
     @property
     def should_poll(self):
-        return self._should_poll
+        return self._config.should_poll
 
     @property
     def state(self):
+        # @TODO: Either decide what type of value to return consistently or
+        #        allow it to be configurable.
         return int(self._value_percentage)
 
     @property
     def unit_of_measurement(self):
+        # @TODO: Either decide what type of value to return consistently or
+        #        allow it to be configurable.
         return "%"
 
     @property
@@ -485,4 +576,7 @@ class ZigBeeAnalogIn(Entity):
         """
         Get the latest reading from the ADC.
         """
-        self._value = DEVICE.read_analog_pin(self._pin, self._address)
+        # Store the _value as the raw number returned from the device and
+        # handle conversion in the properties.
+        self._value = DEVICE.read_analog_pin(
+            self._config.pin, self._config.address)
