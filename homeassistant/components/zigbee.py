@@ -187,6 +187,8 @@ class ZigBeeDigitalIn(ToggleEntity):
     def __init__(self, hass, config):
         self._config = config
         self._state = False
+        if config.should_poll:
+            hass.pool.add_job(JobPriority.EVENT_STATE, (self.update, None))
 
     @property
     def name(self):
@@ -217,7 +219,9 @@ class ZigBeeDigitalOut(ZigBeeDigitalIn):
     """
     def __init__(self, hass, config):
         super(ZigBeeDigitalOut, self).__init__(hass, config)
-        # Get initial value if HA isn't going to do it repeatedly anyway.
+        # Get initial value regardless of whether we should_poll.
+        # If config.should_poll is True, then it's already been handled in
+        # our parent class __init__().
         if not config.should_poll:
             hass.pool.add_job(JobPriority.EVENT_STATE, (self.update, None))
 
@@ -243,6 +247,8 @@ class ZigBeeAnalogIn(Entity):
     def __init__(self, hass, config):
         self._config = config
         self._value = None
+        if config.should_poll:
+            hass.pool.add_job(JobPriority.EVENT_STATE, (self.update, None))
 
     @property
     def name(self):
@@ -260,7 +266,7 @@ class ZigBeeAnalogIn(Entity):
     def unit_of_measurement(self):
         return "%"
 
-    def update(self):
+    def update(self, *args):
         """
         Get the latest reading from the ADC.
         """
