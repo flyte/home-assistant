@@ -15,5 +15,5 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     Create and add an entity based on the configuration.
     """
     add_entities([
-        ZigBeeDigitalOut(ZigBeeDigitalOutConfig(config))
+        ZigBeeDigitalOut(hass, ZigBeeDigitalOutConfig(config))
     ])

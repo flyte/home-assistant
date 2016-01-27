@@ -6,6 +6,7 @@ Contains functionality to use a ZigBee device as a sensor.
 
 import logging
 
+from homeassistant.core import JobPriority
 from homeassistant.const import TEMP_CELCIUS
 from homeassistant.helpers.entity import Entity
 from homeassistant.components import zigbee
@@ -30,23 +31,19 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     except KeyError:
         _LOGGER.exception("Unknown ZigBee sensor type: %s", typ)
         return
-    add_entities([sensor_class(config_class(config))])
+    add_entities([sensor_class(hass, config_class(config))])
 
 
 class ZigBeeTemperatureSensor(Entity):
     """
     Allows usage of an XBee Pro as a temperature sensor.
     """
-    def __init__(self, config):
+    def __init__(self, hass, config):
         self._config = config
         self._temp = None
-        # @TODO: Instead of trying to update here, invoke a service to get
-        #        the value instead.
-        try:
-            self.update()
-        except zigbee.ZigBeeTxFailure as exc:
-            _LOGGER.warning(
-                "Unable to get initial value of %s: %s", config.name, exc)
+        # Get initial value if HA isn't going to do it repeatedly anyway.
+        if not config.should_poll:
+            hass.pool.add_job(JobPriority.EVENT_STATE, (self.update, None))
 
     @property
     def name(self):
@@ -60,7 +57,7 @@ class ZigBeeTemperatureSensor(Entity):
     def unit_of_measurement(self):
         return TEMP_CELCIUS
 
-    def update(self):
+    def update(self, *args):
         self._temp = zigbee.DEVICE.get_temperature(self._config.address)
 
 
