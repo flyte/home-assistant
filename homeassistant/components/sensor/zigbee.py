@@ -63,6 +63,5 @@ class ZigBeeTemperatureSensor(Entity):
 # This must be below the ZigBeeTemperatureSensor which it references.
 TYPE_CLASSES = {
     "temperature": (ZigBeeTemperatureSensor, zigbee.ZigBeeConfig),
-    "analog": (zigbee.ZigBeeAnalogIn, zigbee.ZigBeeAnalogInConfig),
-    "digital": (zigbee.ZigBeeDigitalIn, zigbee.ZigBeeDigitalPinConfig)
+    "analog": (zigbee.ZigBeeAnalogIn, zigbee.ZigBeeAnalogInConfig)
 }
