@@ -6,7 +6,6 @@ Contains functionality to use a ZigBee device as a sensor.
 
 import logging
 
-from homeassistant.core import JobPriority
 from homeassistant.const import TEMP_CELCIUS
 from homeassistant.helpers.entity import Entity
 from homeassistant.components import zigbee
@@ -41,9 +40,6 @@ class ZigBeeTemperatureSensor(Entity):
     def __init__(self, hass, config):
         self._config = config
         self._temp = None
-        # Get initial value if HA isn't going to do it repeatedly anyway.
-        if not config.should_poll:
-            hass.pool.add_job(JobPriority.EVENT_STATE, (self.update, None))
 
     @property
     def name(self):
@@ -57,7 +53,7 @@ class ZigBeeTemperatureSensor(Entity):
     def unit_of_measurement(self):
         return TEMP_CELCIUS
 
-    def update(self, *args):
+    def update(self):
         self._temp = zigbee.DEVICE.get_temperature(self._config.address)
 
 
