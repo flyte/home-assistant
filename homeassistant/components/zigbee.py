@@ -18,7 +18,7 @@ from homeassistant.helpers.entity import Entity, ToggleEntity
 
 
 DOMAIN = "zigbee"
-REQUIREMENTS = ("xbee-helper",)
+REQUIREMENTS = ("xbee-helper==0.0.4",)
 
 CONF_DEVICE = "device"
 CONF_BAUD = "baud"
