@@ -155,6 +155,9 @@ class ZigBeeDigitalPinConfig(ZigBeePinConfig):
         """
         return self._state2bool
 
+# Create an alias so that ZigBeeDigitalOutConfig has a logical opposite.
+ZigBeeDigitalInConfig = ZigBeeDigitalPinConfig
+
 
 class ZigBeeDigitalOutConfig(ZigBeeDigitalPinConfig):
     """
