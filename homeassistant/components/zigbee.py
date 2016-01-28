@@ -6,7 +6,6 @@ Sets up and provides access to a ZigBee device and contains generic entity
 classes.
 """
 
-import logging
 from binascii import unhexlify
 
 import xbee_helper.const as xb_const
@@ -26,14 +25,6 @@ CONF_BAUD = "baud"
 DEFAULT_DEVICE = "/dev/ttyUSB0"
 DEFAULT_BAUD = 9600
 DEFAULT_ADC_MAX_VOLTS = 1.2
-
-_LOGGER = logging.getLogger(__name__)
-_LOGGER.addHandler(logging.StreamHandler())
-_LOGGER.setLevel(logging.DEBUG)
-
-# Service to set states on ZigBee modules
-# Service to request state from ZigBee modules
-# Event for incoming state notifications
 
 DEVICE = None
 
