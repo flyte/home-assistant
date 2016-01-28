@@ -214,7 +214,7 @@ radiotherm==1.2
 vsure==0.4.5
 
 # homeassistant.components.zigbee
-xbee-helper==0.0.4
+xbee-helper==0.0.6
 
 # homeassistant.components.zwave
 pydispatcher==2.0.5

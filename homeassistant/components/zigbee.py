@@ -18,7 +18,7 @@ from homeassistant.helpers.entity import Entity, ToggleEntity
 
 
 DOMAIN = "zigbee"
-REQUIREMENTS = ("xbee-helper==0.0.4",)
+REQUIREMENTS = ("xbee-helper==0.0.6",)
 
 CONF_DEVICE = "device"
 CONF_BAUD = "baud"
@@ -55,7 +55,7 @@ def setup(hass, config):
     return True
 
 
-def close_serial_port():
+def close_serial_port(*args):
     """
     Close the serial port we're using to communicate with the ZigBee.
     """

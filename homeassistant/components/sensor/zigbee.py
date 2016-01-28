@@ -58,6 +58,7 @@ class ZigBeeTemperatureSensor(Entity):
 
     def update(self, *args):
         self._temp = zigbee.DEVICE.get_temperature(self._config.address)
+        self.update_ha_state()
 
 
 # This must be below the ZigBeeTemperatureSensor which it references.
