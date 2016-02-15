@@ -22,8 +22,9 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
 
 
 class BinarySensor(tcp.TCPEntity, BinarySensorDevice):
+    """ A binary sensor which is on when its state == CONF_VALUE_ON. """
     required = (tcp.CONF_VALUE_ON,)
 
     @property
     def is_on(self):
-        return self._state == self._value_on
+        return self._state == self._config[tcp.CONF_VALUE_ON]

@@ -34,21 +34,23 @@ def setup(hass, config):
 
 
 class TCPEntity(Entity):
+    """ Generic Entity which gets its value from a TCP socket. """
     required = tuple()
 
-    """ Generic Entity which gets its value from a TCP socket. """
     def __init__(self, config):
         """ Set all the config values if they exist and get initial state. """
-        self._name = config.get(CONF_NAME)
-        self._host = config[CONF_HOST]
-        self._port = config[CONF_PORT]
-        self._timeout = config.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
-        self._payload = config[CONF_PAYLOAD]
-        self._unit = config.get(CONF_UNIT)
-        self._value_regex = config.get(CONF_VALUE_REGEX)
-        self._value_on = config.get(CONF_VALUE_ON)
-        self._buffer_size = config.get(
-            CONF_BUFFER_SIZE, DEFAULT_BUFFER_SIZE)
+        self._config = {
+            CONF_NAME: config.get(CONF_NAME),
+            CONF_HOST: config[CONF_HOST],
+            CONF_PORT: config[CONF_PORT],
+            CONF_TIMEOUT: config.get(CONF_TIMEOUT, DEFAULT_TIMEOUT),
+            CONF_PAYLOAD: config[CONF_PAYLOAD],
+            CONF_UNIT: config.get(CONF_UNIT),
+            CONF_VALUE_REGEX: config.get(CONF_VALUE_REGEX),
+            CONF_VALUE_ON: config.get(CONF_VALUE_ON),
+            CONF_BUFFER_SIZE: config.get(
+                CONF_BUFFER_SIZE, DEFAULT_BUFFER_SIZE),
+        }
         self._state = None
         self.update()
 
@@ -65,8 +67,9 @@ class TCPEntity(Entity):
 
     @property
     def name(self):
-        if self._name is not None:
-            return self._name
+        name = self._config[CONF_NAME]
+        if name is not None:
+            return name
         return super(TCPEntity, self).name
 
     @property
@@ -75,40 +78,48 @@ class TCPEntity(Entity):
 
     @property
     def unit_of_measurement(self):
-        return self._unit
+        return self._config[CONF_UNIT]
 
     def update(self):
         """ Get the latest value for this sensor. """
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            sock.connect((self._host, self._port))
+            sock.connect((self._config[CONF_HOST], self._config[CONF_PORT]))
         except socket.error as err:
             _LOGGER.error(
                 "Unable to connect to %s on port %s: %s",
-                self._host, self._port, err)
+                self._config[CONF_HOST], self._config[CONF_PORT], err)
             return
         try:
-            sock.send(self._payload.encode())
+            sock.send(self._config[CONF_PAYLOAD].encode())
         except socket.error as err:
             _LOGGER.error(
                 "Unable to send payload %r to %s on port %s: %s",
-                self._payload, self._host, self._port, err)
+                self._config[CONF_PAYLOAD], self._config[CONF_HOST],
+                self._config[CONF_PORT], err)
             return
-        readable, _, _ = select([sock], [], [], self._timeout)
+        readable, _, _ = select([sock], [], [], self._config[CONF_TIMEOUT])
         if not readable:
             _LOGGER.warning(
                 "Timeout (%s second(s)) waiting for a response after sending "
                 "%r to %s on port %s.",
-                self._timeout, self._payload, self._host, self._port)
+                self._config[CONF_TIMEOUT], self._config[CONF_PAYLOAD],
+                self._config[CONF_HOST], self._config[CONF_PORT])
             return
-        value = sock.recv(self._buffer_size).decode()
-        if self._value_regex is not None:
-            match = re.match(self._value_regex, value)
+        value = sock.recv(self._config[CONF_BUFFER_SIZE]).decode()
+        if self._config[CONF_VALUE_REGEX] is not None:
+            match = re.match(self._config[CONF_VALUE_REGEX], value)
             if match is None:
                 _LOGGER.warning(
                     "Unable to match value using value_regex of %r: %r",
-                    self._value_regex, value)
+                    self._config[CONF_VALUE_REGEX], value)
                 return
-            self._state = match.groups()[0]
+            try:
+                self._state = match.groups()[0]
+            except IndexError:
+                _LOGGER.error(
+                    "You must include a capture group in the regex for %r: %r",
+                    self.name, self._config[CONF_VALUE_REGEX])
+                return
             return
         self._state = value
