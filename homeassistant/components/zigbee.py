@@ -161,9 +161,11 @@ class ZigBeeDigitalInConfig(ZigBeePinConfig):
 
     @property
     def boolean_maps(self):
-        """Create dicts to map the pin state (true/false) to potentially
-        inverted values depending on the on_state config value which should
-        be set to "low" or "high".
+        """Create mapping dictionaries for potential inversion of booleans.
+
+        Create dicts to map the pin state (true/false) to potentially inverted
+        values depending on the on_state config value which should be set to
+        "low" or "high".
         """
         if self._config.get("on_state", "").lower() == "low":
             bool2state = {
@@ -263,7 +265,8 @@ class ZigBeeDigitalIn(Entity):
         self._state = False
 
         def handle_frame(frame):
-            """
+            """Handle an incoming frame.
+
             Handle an incoming frame and update our status if it contains
             information relating to this device.
             """
@@ -364,8 +367,8 @@ class ZigBeeDigitalOut(ZigBeeDigitalIn):
                 self._config.address)
         except ZIGBEE_TX_FAILURE:
             _LOGGER.warning(
-                "Transmission failure when attempting to get output pin status "
-                "from ZigBee device at address: %s",
+                "Transmission failure when attempting to get output pin status"
+                " from ZigBee device at address: %s",
                 hexlify(self._config.address))
             return
         except ZIGBEE_EXCEPTION as exc:
@@ -384,7 +387,8 @@ class ZigBeeAnalogIn(Entity):
         self._value = None
 
         def handle_frame(frame):
-            """
+            """Handle an incoming frame.
+
             Handle an incoming frame and update our status if it contains
             information relating to this device.
             """
@@ -399,7 +403,7 @@ class ZigBeeAnalogIn(Entity):
             if pin_name not in sample:
                 # Doesn't contain information about our pin
                 return
-            self._state = CONVERT_ADC(
+            self._value = CONVERT_ADC(
                 sample[pin_name],
                 ADC_PERCENTAGE,
                 self._config.max_voltage
