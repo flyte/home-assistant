@@ -5,6 +5,7 @@ For more details about this component, please refer to the documentation at
 https://home-assistant.io/components/zigbee/
 """
 import logging
+import pickle
 from binascii import hexlify, unhexlify
 from base64 import b64encode, b64decode
 
@@ -75,7 +76,8 @@ def setup(hass, config):
     def _frame_received(frame):
         """Called when a ZigBee frame is received."""
         hass.bus.fire(
-            EVENT_ZIGBEE_FRAME_RECEIVED, {ATTR_FRAME: b64encode(frame)})
+            EVENT_ZIGBEE_FRAME_RECEIVED,
+            {ATTR_FRAME: b64encode(pickle.dumps(frame)).decode("ascii")})
 
     DEVICE.add_frame_rx_handler(_frame_received)
 
@@ -87,11 +89,11 @@ def close_serial_port(*args):
     DEVICE.zb.serial.close()
 
 
-def subscribe(hass, filtr, callback, qos=DEFAULT_QOS):
+def subscribe(hass, callback, filtr=lambda x: True, qos=DEFAULT_QOS):
     """Subscribe to incoming ZigBee frames."""
     def zigbee_frame_subscriber(event):
         """Use filter to only call callback on desired frames."""
-        frame = b64decode(event.data[ATTR_FRAME])
+        frame = pickle.loads(b64decode(event.data[ATTR_FRAME]))
         if filtr(frame):
             callback(frame)
 
@@ -252,6 +254,27 @@ class ZigBeeDigitalIn(Entity):
         hass.pool.add_job(
             JobPriority.EVENT_STATE, (self.update_ha_state, True))
 
+        def handle_frame(frame):
+            """
+            Handle an incoming frame and update our status if it contains
+            information relating to this device.
+            """
+            if frame.get("source_addr_long") != self._config.address:
+                # Not for us
+                return
+            if "samples" not in frame:
+                # Not a sample
+                return
+            sample = frame["samples"].pop()
+            pin_name = DIGITAL_PINS[self._config.pin]
+            if pin_name not in sample:
+                # Doesn't contain information about our pin
+                return
+            self._state = self._config.state2bool[sample[pin_name]]
+            self.update_ha_state()
+
+        subscribe(hass, handle_frame)
+
     @property
     def name(self):
         """Return the name of the input."""
@@ -268,7 +291,7 @@ class ZigBeeDigitalIn(Entity):
         return self._state
 
     def update(self):
-        """Ask the ZigBee device what its input pin state is."""
+        """Ask the ZigBee device what state its input pin is in."""
         try:
             sample = DEVICE.get_sample(self._config.address)
         except ZIGBEE_TX_FAILURE:
@@ -288,7 +311,6 @@ class ZigBeeDigitalIn(Entity):
                 self._config.pin, pin_name, hexlify(self._config.address))
             return
         self._state = self._config.state2bool[sample[pin_name]]
-        _LOGGER.error("Set status to: %s", self._state)
 
 
 class ZigBeeDigitalOut(ZigBeeDigitalIn):
