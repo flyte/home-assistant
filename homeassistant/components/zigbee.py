@@ -6,13 +6,16 @@ https://home-assistant.io/components/zigbee/
 """
 import logging
 from binascii import hexlify, unhexlify
+from base64 import b64encode, b64decode
 
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import JobPriority
 from homeassistant.helpers.entity import Entity
 
 DOMAIN = "zigbee"
-REQUIREMENTS = ("xbee-helper==0.0.6",)
+REQUIREMENTS = ("xbee-helper==0.0.7",)
+
+EVENT_ZIGBEE_FRAME_RECEIVED = "zigbee_frame_received"
 
 CONF_DEVICE = "device"
 CONF_BAUD = "baud"
@@ -20,13 +23,17 @@ CONF_BAUD = "baud"
 DEFAULT_DEVICE = "/dev/ttyUSB0"
 DEFAULT_BAUD = 9600
 DEFAULT_ADC_MAX_VOLTS = 1.2
+DEFAULT_QOS = 0
 
 # Copied from xbee_helper during setup()
 GPIO_DIGITAL_OUTPUT_LOW = None
 GPIO_DIGITAL_OUTPUT_HIGH = None
 ADC_PERCENTAGE = None
+DIGITAL_PINS = None
 ZIGBEE_EXCEPTION = None
 ZIGBEE_TX_FAILURE = None
+
+ATTR_FRAME = "frame"
 
 DEVICE = None
 
@@ -39,6 +46,7 @@ def setup(hass, config):
     global GPIO_DIGITAL_OUTPUT_LOW
     global GPIO_DIGITAL_OUTPUT_HIGH
     global ADC_PERCENTAGE
+    global DIGITAL_PINS
     global ZIGBEE_EXCEPTION
     global ZIGBEE_TX_FAILURE
 
@@ -50,6 +58,7 @@ def setup(hass, config):
     GPIO_DIGITAL_OUTPUT_LOW = xb_const.GPIO_DIGITAL_OUTPUT_LOW
     GPIO_DIGITAL_OUTPUT_HIGH = xb_const.GPIO_DIGITAL_OUTPUT_HIGH
     ADC_PERCENTAGE = xb_const.ADC_PERCENTAGE
+    DIGITAL_PINS = xb_const.DIGITAL_PINS
     ZIGBEE_EXCEPTION = ZigBeeException
     ZIGBEE_TX_FAILURE = ZigBeeTxFailure
 
@@ -62,12 +71,31 @@ def setup(hass, config):
         return False
     DEVICE = ZigBee(ser)
     hass.bus.listen_once(EVENT_HOMEASSISTANT_STOP, close_serial_port)
+
+    def _frame_received(frame):
+        """Called when a ZigBee frame is received."""
+        hass.bus.fire(
+            EVENT_ZIGBEE_FRAME_RECEIVED, {ATTR_FRAME: b64encode(frame)})
+
+    DEVICE.add_frame_rx_handler(_frame_received)
+
     return True
 
 
 def close_serial_port(*args):
     """Close the serial port we're using to communicate with the ZigBee."""
     DEVICE.zb.serial.close()
+
+
+def subscribe(hass, filtr, callback, qos=DEFAULT_QOS):
+    """Subscribe to incoming ZigBee frames."""
+    def zigbee_frame_subscriber(event):
+        """Use filter to only call callback on desired frames."""
+        frame = b64decode(event.data[ATTR_FRAME])
+        if filtr(frame):
+            callback(frame)
+
+    hass.bus.listen(EVENT_ZIGBEE_FRAME_RECEIVED, zigbee_frame_subscriber)
 
 
 class ZigBeeConfig(object):
@@ -110,13 +138,62 @@ class ZigBeePinConfig(ZigBeeConfig):
         return self._config["pin"]
 
 
-class ZigBeeDigitalPinConfig(ZigBeePinConfig):
-    """Handle the fetching of configuration from the config file."""
+class ZigBeeDigitalInConfig(ZigBeePinConfig):
+    """A subclass of ZigBeePinConfig."""
 
     def __init__(self, config):
-        """Initialize the configuration."""
-        super(ZigBeeDigitalPinConfig, self).__init__(config)
+        """Initialise the ZigBee Digital input config."""
+        super(ZigBeeDigitalInConfig, self).__init__(config)
         self._bool2state, self._state2bool = self.boolean_maps
+
+    @property
+    def boolean_maps(self):
+        """Create dicts to map the pin state (true/false) to potentially
+        inverted values depending on the on_state config value which should
+        be set to "low" or "high".
+        """
+        if self._config.get("on_state", "").lower() == "low":
+            bool2state = {
+                True: False,
+                False: True
+            }
+        else:
+            bool2state = {
+                True: True,
+                False: False
+            }
+        state2bool = {v: k for k, v in bool2state.items()}
+        return bool2state, state2bool
+
+    @property
+    def bool2state(self):
+        """A dictionary mapping the internal value to the ZigBee value.
+
+        For the translation of on/off as being pin high or low.
+        """
+        return self._bool2state
+
+    @property
+    def state2bool(self):
+        """A dictionary mapping the ZigBee value to the internal value.
+
+        For the translation of pin high/low as being on or off.
+        """
+        return self._state2bool
+
+
+class ZigBeeDigitalOutConfig(ZigBeePinConfig):
+    """A subclass of ZigBeePinConfig.
+
+    Set _should_poll to default as False instead of True. The value will
+    still be overridden by the presence of a 'poll' config entry.
+    """
+
+    def __init__(self, config):
+        """Initialize the ZigBee Digital out."""
+        super(ZigBeeDigitalOutConfig, self).__init__(config)
+        self._bool2state, self._state2bool = self.boolean_maps
+        self._should_poll = config.get("poll", False)
 
     @property
     def boolean_maps(self):
@@ -153,22 +230,6 @@ class ZigBeeDigitalPinConfig(ZigBeePinConfig):
         For the translation of pin high/low as being on or off.
         """
         return self._state2bool
-
-# Create an alias so that ZigBeeDigitalOutConfig has a logical opposite.
-ZigBeeDigitalInConfig = ZigBeeDigitalPinConfig
-
-
-class ZigBeeDigitalOutConfig(ZigBeeDigitalPinConfig):
-    """A subclass of ZigBeeDigitalPinConfig.
-
-    Set _should_poll to default as False instead of True. The value will
-    still be overridden by the presence of a 'poll' config entry.
-    """
-
-    def __init__(self, config):
-        """Initialize the ZigBee Digital out."""
-        super(ZigBeeDigitalOutConfig, self).__init__(config)
-        self._should_poll = config.get("poll", False)
 
 
 class ZigBeeAnalogInConfig(ZigBeePinConfig):
@@ -207,11 +268,9 @@ class ZigBeeDigitalIn(Entity):
         return self._state
 
     def update(self):
-        """Ask the ZigBee device what its output is set to."""
+        """Ask the ZigBee device what its input pin state is."""
         try:
-            pin_state = DEVICE.get_gpio_pin(
-                self._config.pin,
-                self._config.address)
+            sample = DEVICE.get_sample(self._config.address)
         except ZIGBEE_TX_FAILURE:
             _LOGGER.warning(
                 "Transmission failure when attempting to get sample from "
@@ -221,7 +280,15 @@ class ZigBeeDigitalIn(Entity):
             _LOGGER.exception(
                 "Unable to get sample from ZigBee device: %s", exc)
             return
-        self._state = self._config.state2bool[pin_state]
+        pin_name = DIGITAL_PINS[self._config.pin]
+        if pin_name not in sample:
+            _LOGGER.warning(
+                "Pin %s (%s) was not in the sample provided by ZigBee device "
+                "%s.",
+                self._config.pin, pin_name, hexlify(self._config.address))
+            return
+        self._state = self._config.state2bool[sample[pin_name]]
+        _LOGGER.error("Set status to: %s", self._state)
 
 
 class ZigBeeDigitalOut(ZigBeeDigitalIn):
@@ -254,6 +321,24 @@ class ZigBeeDigitalOut(ZigBeeDigitalIn):
     def turn_off(self, **kwargs):
         """Set the digital output to its 'off' state."""
         self._set_state(False)
+
+    def update(self):
+        """Ask the ZigBee device what its output is set to."""
+        try:
+            pin_state = DEVICE.get_gpio_pin(
+                self._config.pin,
+                self._config.address)
+        except ZIGBEE_TX_FAILURE:
+            _LOGGER.warning(
+                "Transmission failure when attempting to get output pin status "
+                "from ZigBee device at address: %s",
+                hexlify(self._config.address))
+            return
+        except ZIGBEE_EXCEPTION as exc:
+            _LOGGER.exception(
+                "Unable to get output pin status from ZigBee device: %s", exc)
+            return
+        self._state = self._config.state2bool[pin_state]
 
 
 class ZigBeeAnalogIn(Entity):
