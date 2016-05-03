@@ -31,6 +31,8 @@ GPIO_DIGITAL_OUTPUT_LOW = None
 GPIO_DIGITAL_OUTPUT_HIGH = None
 ADC_PERCENTAGE = None
 DIGITAL_PINS = None
+ANALOG_PINS = None
+CONVERT_ADC = None
 ZIGBEE_EXCEPTION = None
 ZIGBEE_TX_FAILURE = None
 
@@ -48,11 +50,14 @@ def setup(hass, config):
     global GPIO_DIGITAL_OUTPUT_HIGH
     global ADC_PERCENTAGE
     global DIGITAL_PINS
+    global ANALOG_PINS
+    global CONVERT_ADC
     global ZIGBEE_EXCEPTION
     global ZIGBEE_TX_FAILURE
 
     import xbee_helper.const as xb_const
     from xbee_helper import ZigBee
+    from xbee_helper.device import convert_adc
     from xbee_helper.exceptions import ZigBeeException, ZigBeeTxFailure
     from serial import Serial, SerialException
 
@@ -60,6 +65,8 @@ def setup(hass, config):
     GPIO_DIGITAL_OUTPUT_HIGH = xb_const.GPIO_DIGITAL_OUTPUT_HIGH
     ADC_PERCENTAGE = xb_const.ADC_PERCENTAGE
     DIGITAL_PINS = xb_const.DIGITAL_PINS
+    ANALOG_PINS = xb_const.ANALOG_PINS
+    CONVERT_ADC = convert_adc
     ZIGBEE_EXCEPTION = ZigBeeException
     ZIGBEE_TX_FAILURE = ZigBeeTxFailure
 
@@ -74,7 +81,11 @@ def setup(hass, config):
     hass.bus.listen_once(EVENT_HOMEASSISTANT_STOP, close_serial_port)
 
     def _frame_received(frame):
-        """Called when a ZigBee frame is received."""
+        """Called when a ZigBee frame is received.
+
+        Pickles the frame, then encodes it into base64 since it contains
+        non JSON serializable binary.
+        """
         hass.bus.fire(
             EVENT_ZIGBEE_FRAME_RECEIVED,
             {ATTR_FRAME: b64encode(pickle.dumps(frame)).decode("ascii")})
@@ -250,9 +261,6 @@ class ZigBeeDigitalIn(Entity):
         """Initialize the device."""
         self._config = config
         self._state = False
-        # Get initial state
-        hass.pool.add_job(
-            JobPriority.EVENT_STATE, (self.update_ha_state, True))
 
         def handle_frame(frame):
             """
@@ -274,6 +282,10 @@ class ZigBeeDigitalIn(Entity):
             self.update_ha_state()
 
         subscribe(hass, handle_frame)
+
+        # Get initial state
+        hass.pool.add_job(
+            JobPriority.EVENT_STATE, (self.update_ha_state, True))
 
     @property
     def name(self):
@@ -370,6 +382,32 @@ class ZigBeeAnalogIn(Entity):
         """Initialize the ZigBee analog in device."""
         self._config = config
         self._value = None
+
+        def handle_frame(frame):
+            """
+            Handle an incoming frame and update our status if it contains
+            information relating to this device.
+            """
+            if frame.get("source_addr_long") != self._config.address:
+                # Not for us
+                return
+            if "samples" not in frame:
+                # Not a sample
+                return
+            sample = frame["samples"].pop()
+            pin_name = ANALOG_PINS[self._config.pin]
+            if pin_name not in sample:
+                # Doesn't contain information about our pin
+                return
+            self._state = CONVERT_ADC(
+                sample[pin_name],
+                ADC_PERCENTAGE,
+                self._config.max_voltage
+            )
+            self.update_ha_state()
+
+        subscribe(hass, handle_frame)
+
         # Get initial state
         hass.pool.add_job(
             JobPriority.EVENT_STATE, (self.update_ha_state, True))
